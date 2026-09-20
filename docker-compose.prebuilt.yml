@@ -1,0 +1,32 @@
+services:
+  recallhub:
+    image: tomcat:10.1.60-jdk17-temurin-noble
+    container_name: recallhub
+    restart: unless-stopped
+    ports:
+      - "${RECALLHUB_HTTP_PORT:-8080}:8080"
+    env_file:
+      - .env.docker
+    environment:
+      CATALINA_OPTS: >-
+        -Dfile.encoding=UTF-8
+        -Duser.timezone=UTC
+        -XX:MaxRAMPercentage=75.0
+      BACKUP_PATH: /opt/recallhub/backups
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./server/target/recall-hub-server-1.0.0.war:/usr/local/tomcat/webapps/ROOT.war:ro
+      - ./backups:/opt/recallhub/backups
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8080 &&
+          printf 'GET /actuator/health HTTP/1.0\r\n\r\n' >&3 &&
+          grep -q '200' <&3
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
+

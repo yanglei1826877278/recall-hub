@@ -613,27 +613,64 @@ MYSQLDUMP_PATH=I:/MySQL/mysql-5.7.23-winx64/bin/mysqldump.exe
 
 ## 16. 生产构建
 
-### Windows
+### Windows 手工构建 WAR
 
-在项目根目录执行：
+在 Windows PowerShell 中执行：
 
 ```powershell
-.\deploy\build.ps1
+cd "I:\JAVA\IDEA代码\recall-hub\web"
+
+pnpm install --frozen-lockfile
+pnpm build
+
+cd ..
+
+$StaticPath = "I:\JAVA\IDEA代码\recall-hub\server\src\main\resources\static"
+
+if (Test-Path -LiteralPath $StaticPath) {
+    Remove-Item -LiteralPath $StaticPath -Recurse -Force
+}
+
+New-Item -ItemType Directory -Path $StaticPath | Out-Null
+Copy-Item -Path ".\web\dist\*" -Destination $StaticPath -Recurse
+
+cd server
+mvn package -DskipTests
 ```
 
-### Linux
+需要完全清理后重新构建时，将最后一条命令改成：
+
+```powershell
+mvn clean package -DskipTests
+```
+
+### Linux 手工构建 WAR
+
+在 Linux 项目根目录执行：
 
 ```bash
-chmod +x deploy/build.sh
-./deploy/build.sh
+cd /path/to/recall-hub/web
+
+pnpm install --frozen-lockfile
+pnpm build
+
+cd ..
+
+rm -rf server/src/main/resources/static
+mkdir -p server/src/main/resources/static
+cp -a web/dist/. server/src/main/resources/static/
+
+cd server
+mvn package -DskipTests
 ```
 
-构建脚本会：
+需要完全清理后重新构建：
 
-1. 安装前端依赖。
-2. 执行前端类型检查和生产构建。
-3. 把 `web/dist` 复制到 Spring Boot `static/`。
-4. 执行 Maven 打包。
+```bash
+mvn clean package -DskipTests
+```
+
+如果只修改了 Java，并且 `server/src/main/resources/static` 中已经包含正确的前端资源，可以直接执行 Maven 打包，不必重新构建前端。
 
 最终 WAR：
 
@@ -658,7 +695,7 @@ http://RecallHub主机地址:8080
 
 Linux 常驻服务示例位于 `deploy/recallhub.service`。
 
-### Docker Tomcat 部署（推荐）
+### Docker 多阶段自动构建（可选，适合 CI）
 
 仓库已提供：
 
@@ -801,6 +838,108 @@ docker compose down
 
 该命令只停止并删除 RecallHub 容器和网络，不会删除外部 MySQL 数据。
 
+### Docker Tomcat 部署预构建 WAR（推荐）
+
+先按照前面的 Windows 或 Linux 步骤生成：
+
+```text
+server/target/recall-hub-server-1.0.0.war
+```
+
+`docker-compose.prebuilt.yml` 不执行 Node、pnpm、Maven 或镜像构建，只把现有 WAR 挂载到官方 Tomcat：
+
+```text
+宿主机：server/target/recall-hub-server-1.0.0.war
+容器内：/usr/local/tomcat/webapps/ROOT.war
+```
+
+#### Windows Docker Desktop
+
+准备配置：
+
+```powershell
+cd "I:\JAVA\IDEA代码\recall-hub"
+Copy-Item .env.docker.example .env.docker
+notepad .env.docker
+```
+
+宿主机 MySQL 地址填写：
+
+```properties
+MYSQL_HOST=host.docker.internal
+```
+
+启动：
+
+```powershell
+docker compose -f docker-compose.prebuilt.yml pull
+docker compose -f docker-compose.prebuilt.yml up -d
+docker compose -f docker-compose.prebuilt.yml ps
+docker compose -f docker-compose.prebuilt.yml logs -f recallhub
+```
+
+#### Linux Docker
+
+进入项目目录并准备配置：
+
+```bash
+cd /path/to/recall-hub
+cp .env.docker.example .env.docker
+nano .env.docker
+```
+
+如果 MySQL 运行在 Docker 宿主机，保留：
+
+```properties
+MYSQL_HOST=host.docker.internal
+```
+
+Compose 已通过以下配置将该主机名映射到 Linux Docker Host Gateway：
+
+```yaml
+extra_hosts:
+  - "host.docker.internal:host-gateway"
+```
+
+如果 MySQL 是另一个容器，`MYSQL_HOST` 应填写 MySQL 的服务名，并确保两个容器位于同一 Docker 网络。
+
+启动：
+
+```bash
+docker compose -f docker-compose.prebuilt.yml pull
+docker compose -f docker-compose.prebuilt.yml up -d
+docker compose -f docker-compose.prebuilt.yml ps
+docker compose -f docker-compose.prebuilt.yml logs -f recallhub
+```
+
+访问：
+
+```text
+http://服务器IP:8080/
+http://服务器IP:8080/actuator/health
+```
+
+#### 更新 WAR
+
+1. 按 Windows 或 Linux 构建步骤重新生成 WAR。
+2. 确认 WAR 文件名仍为 `recall-hub-server-1.0.0.war`。
+3. 强制重建 Tomcat 容器，使其重新解压 WAR：
+
+Windows 或 Linux 均执行：
+
+```bash
+docker compose -f docker-compose.prebuilt.yml up -d --force-recreate
+docker compose -f docker-compose.prebuilt.yml logs -f recallhub
+```
+
+停止：
+
+```bash
+docker compose -f docker-compose.prebuilt.yml down
+```
+
+该流程不会重新构建 Docker 镜像。第一次拉取 Tomcat 镜像后，后续更新只需要重新生成 WAR 和重建容器。
+
 ### 部署到外部 Tomcat
 
 必须使用：
@@ -814,16 +953,63 @@ JDK 17
 
 #### 1. 构建包含前端的 WAR
 
-在项目根目录执行：
+按照本章开头的 Windows 或 Linux 手工构建步骤生成 WAR。不要只在 `server/` 中执行 Maven 打包，否则 WAR 中可能没有最新的 Vue 前端资源。
 
-```powershell
-cd "I:\JAVA\IDEA代码\recall-hub"
-.\deploy\build.ps1
+#### 2. Linux 原生 Tomcat
+
+在 `$CATALINA_BASE/bin/setenv.sh` 中配置：
+
+```bash
+#!/usr/bin/env bash
+
+export MYSQL_HOST="127.0.0.1"
+export MYSQL_PORT="3306"
+export MYSQL_DATABASE="recall_hub"
+export MYSQL_USERNAME="recallhub"
+export MYSQL_PASSWORD="替换成数据库密码"
+
+export RECALLHUB_TIMEZONE="Asia/Shanghai"
+export BACKUP_PATH="/var/lib/recallhub/backups"
+export MYSQLDUMP_PATH="/usr/bin/mysqldump"
+export BACKUP_ENABLED="true"
+
+export CATALINA_OPTS="-Dfile.encoding=UTF-8 -Duser.timezone=UTC -Xms256m -Xmx1024m"
 ```
 
-不要只在 `server/` 中执行 Maven 打包，否则 WAR 中可能没有最新的 Vue 前端资源。
+设置权限：
 
-#### 2. 配置 Tomcat 环境变量
+```bash
+chmod 750 "$CATALINA_BASE/bin/setenv.sh"
+```
+
+停止 Tomcat，将原 ROOT 应用改名备份，然后部署 WAR：
+
+```bash
+sudo systemctl stop tomcat
+
+if [ -d "$CATALINA_BASE/webapps/ROOT" ]; then
+  sudo mv "$CATALINA_BASE/webapps/ROOT" \
+    "$CATALINA_BASE/webapps/ROOT.backup.$(date +%Y%m%d%H%M%S)"
+fi
+
+sudo cp /path/to/recall-hub/server/target/recall-hub-server-1.0.0.war \
+  "$CATALINA_BASE/webapps/ROOT.war"
+
+sudo chown tomcat:tomcat "$CATALINA_BASE/webapps/ROOT.war"
+sudo systemctl start tomcat
+```
+
+检查：
+
+```bash
+systemctl status tomcat
+journalctl -u tomcat -f
+curl -fsS http://127.0.0.1:8080/actuator/health
+```
+
+实际服务名和运行用户可能是 `tomcat10`，请根据服务器安装方式替换示例中的 `tomcat`。
+
+#### 3. Windows 原生 Tomcat
 
 如果使用 `startup.bat` 启动 Tomcat，在 `%CATALINA_HOME%\bin\setenv.bat` 中填写：
 
@@ -849,7 +1035,7 @@ OpenClaw Base URL 和 Hook Token 可以继续在 RecallHub 设置页配置。
 
 如果 Tomcat 安装成了 Windows Service，`setenv.bat` 通常不会经过服务包装器加载。此时应在 Tomcat 服务配置器或 Windows 系统环境变量中设置同名变量，然后重启服务。
 
-#### 3. 以根应用部署
+#### 4. Windows 以根应用部署
 
 RecallHub 前端的 API、图标和路由均按根路径生成，因此 WAR 应部署为 `ROOT.war`。
 
@@ -885,7 +1071,7 @@ http://Tomcat主机:8080/actuator/health
 
 外部 Tomcat 的端口由 `%CATALINA_HOME%\conf\server.xml` 决定，`SERVER_PORT` 在 WAR 部署模式下不会控制容器端口。
 
-#### 4. 更新版本
+#### 5. 更新版本
 
 每次更新执行：
 
