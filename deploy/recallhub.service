@@ -1,0 +1,18 @@
+[Unit]
+Description=RecallHub personal memory service
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=recallhub
+WorkingDirectory=/opt/recallhub
+EnvironmentFile=/etc/recallhub/recallhub.env
+ExecStart=/usr/bin/java -jar /opt/recallhub/recall-hub-server.war --spring.profiles.active=prod
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

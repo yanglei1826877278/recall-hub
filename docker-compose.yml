@@ -1,0 +1,24 @@
+services:
+  recallhub:
+    build:
+      context: .
+      dockerfile: deploy/tomcat/Dockerfile
+    image: recallhub:1.0.0
+    container_name: recallhub
+    restart: unless-stopped
+    ports:
+      - "${RECALLHUB_HTTP_PORT:-8080}:8080"
+    env_file:
+      - .env.docker
+    environment:
+      BACKUP_PATH: /opt/recallhub/backups
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./backups:/opt/recallhub/backups
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 3

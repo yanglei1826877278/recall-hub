@@ -1,0 +1,13 @@
+CREATE TABLE daily_journals (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  journal_date DATE NOT NULL,
+  generated_content LONGTEXT NULL,
+  content LONGTEXT NULL,
+  user_edited TINYINT(1) NOT NULL DEFAULT 0,
+  generated_at DATETIME(3) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_journal_date (journal_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

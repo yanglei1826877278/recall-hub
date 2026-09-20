@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.docker
+.idea
+.vscode
+*.iml
+*.log
+backups
+export
+server/target
+server/src/main/resources/static
+web/node_modules
+web/dist
+

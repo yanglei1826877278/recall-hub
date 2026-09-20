@@ -1,0 +1,13 @@
+.idea/
+.vscode/
+*.iml
+.env
+.env.local
+.env.docker
+server/target/
+server/src/main/resources/static/
+web/node_modules/
+web/dist/
+backups/
+export/
+*.log

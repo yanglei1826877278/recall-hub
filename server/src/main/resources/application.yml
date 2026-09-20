@@ -1,0 +1,67 @@
+spring:
+  application:
+    name: recall-hub
+  config:
+    import:
+      - "optional:file:.env[.properties]"
+      - "optional:file:../.env[.properties]"
+  profiles:
+    default: local
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:recall_hub}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:recallhub}
+    password: ${MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      connection-init-sql: SET time_zone = '+00:00'
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+  jackson:
+    default-property-inclusion: non_null
+    time-zone: UTC
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: strict
+      timeout: 30d
+  error:
+    include-message: never
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: deletedAt
+      logic-not-delete-value: 'null'
+      logic-delete-value: NOW(3)
+recallhub:
+  timezone: ${RECALLHUB_TIMEZONE:Asia/Shanghai}
+  openclaw:
+    base-url: ${OPENCLAW_BASE_URL:http://127.0.0.1:18789}
+    hook-token: ${OPENCLAW_HOOK_TOKEN:}
+    connect-timeout: 3s
+    request-timeout: 90s
+  backup:
+    path: ${BACKUP_PATH:./backups}
+    mysqldump: ${MYSQLDUMP_PATH:mysqldump}
+    enabled: ${BACKUP_ENABLED:false}
+logging:
+  pattern:
+    level: '%5p [requestId=%X{requestId:-}]'
