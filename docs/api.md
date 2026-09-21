@@ -10,9 +10,10 @@
 - `GET|POST /reminders`、`PATCH /reminders/{id}`
 - `POST /reminders/{id}/cancel|snooze`
 - `GET /today`、`GET /timeline`、`GET /search`
-- `GET|PUT /journals/{date}`
+- `GET|PUT /journals/{date}`、`POST /journals/{date}/generate`
 - `GET|POST|PUT|DELETE /themes`
 - `GET /export/json|markdown`
 
 Capture 支持 `Idempotency-Key`，相同 Key 和相同请求会返回第一次结果；相同 Key 搭配不同请求返回冲突。
 
+日记 AI 整理使用设置中的 `ai_base_url`、`ai_api_key` 和 `ai_model` 调用兼容 OpenAI Responses API 的 `/responses` 接口。API Key 不会通过设置读取接口回显。

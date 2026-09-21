@@ -19,6 +19,9 @@ public class JournalController {
     public ApiResponse<?> put(@PathVariable LocalDate date, @RequestBody JournalBody body) {
         return ApiResponse.ok(service.put(date, body.content()));
     }
+    @PostMapping("/{date}/generate") @PreAuthorize("@authz.has('JOURNAL_WRITE', authentication)")
+    public ApiResponse<?> generate(@PathVariable LocalDate date) {
+        return ApiResponse.ok(service.generate(date));
+    }
     public record JournalBody(String content) {}
 }
-
