@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { BookOpenText, ChevronLeft, ChevronRight, LoaderCircle, PenLine, Save, Sparkles } from 'lucide-vue-next'
+import { BookOpenText, ChevronDown, ChevronLeft, ChevronRight, ListTree, LoaderCircle, PenLine, Save, Sparkles, X } from 'lucide-vue-next'
 import { api, unwrap } from '@/api/client'
 import type { Entry } from '@/types'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -35,6 +35,10 @@ const busy = ref(false)
 const aiBusy = ref(false)
 const aiError = ref('')
 const deleting = ref<Entry | null>(null)
+const organizeSheetOpen = ref(false)
+const writtenSection = ref<HTMLElement | null>(null)
+const sourceSection = ref<HTMLElement | null>(null)
+const journalEditor = ref<HTMLTextAreaElement | null>(null)
 
 const title = computed(() => new Intl.DateTimeFormat('zh-CN', {
   year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
@@ -99,6 +103,25 @@ function openReader() {
   if (content.value) router.push({ name: 'journal-reader', params: { date: selected.value } })
 }
 
+async function organizeWithAi() {
+  organizeSheetOpen.value = false
+  await generateWithAi()
+}
+
+async function startManualOrganize() {
+  organizeSheetOpen.value = false
+  editing.value = true
+  await nextTick()
+  writtenSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  journalEditor.value?.focus({ preventScroll: true })
+}
+
+async function viewSourceEntries() {
+  organizeSheetOpen.value = false
+  await nextTick()
+  sourceSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 async function addFragment() {
   if (!fragment.value.trim()) return
   await unwrap(api.post('/entries', {
@@ -160,22 +183,32 @@ onMounted(load)
             <h2>{{ title }}</h2>
           </div>
           <div class="journal-actions">
-            <button class="btn reader-entry" :disabled="!content" title="全屏阅读整理后的日记" @click="openReader">
-              <BookOpenText :size="15" />沉浸式看日记
-            </button>
-            <button
-              class="btn ai-organize"
-              :disabled="aiBusy || !data?.entries.length"
-              :title="!data?.entries.length ? '先添加原始片段' : '用设置中的 AI 模型整理当天片段'"
-              @click="generateWithAi"
-            >
-              <LoaderCircle v-if="aiBusy" class="spin" :size="15" />
-              <Sparkles v-else :size="15" />
-              {{ aiBusy ? '正在整理…' : (content ? 'AI 重新整理' : 'AI 一键整理') }}
-            </button>
-            <button class="btn btn-secondary" @click="editing = !editing">
-              <PenLine :size="15" />{{ editing ? '查看' : '手动整理' }}
-            </button>
+            <div class="desktop-journal-actions">
+              <button class="btn reader-entry" :disabled="!content" title="全屏阅读整理后的日记" @click="openReader">
+                <BookOpenText :size="15" />沉浸式看日记
+              </button>
+              <button
+                class="btn ai-organize"
+                :disabled="aiBusy || !data?.entries.length"
+                :title="!data?.entries.length ? '先添加原始片段' : '用设置中的 AI 模型整理当天片段'"
+                @click="generateWithAi"
+              >
+                <LoaderCircle v-if="aiBusy" class="spin" :size="15" />
+                <Sparkles v-else :size="15" />
+                {{ aiBusy ? '正在整理…' : (content ? 'AI 重新整理' : 'AI 一键整理') }}
+              </button>
+              <button class="btn btn-secondary" @click="editing = !editing">
+                <PenLine :size="15" />{{ editing ? '查看' : '手动整理' }}
+              </button>
+            </div>
+            <div class="mobile-journal-actions">
+              <button class="btn reader-entry" :disabled="!content" @click="openReader">
+                <BookOpenText :size="17" />沉浸阅读
+              </button>
+              <button class="btn organize-menu-trigger" aria-haspopup="dialog" :aria-expanded="organizeSheetOpen" @click="organizeSheetOpen = true">
+                整理<ChevronDown :size="16" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -184,12 +217,12 @@ onMounted(load)
           <RouterLink v-if="aiError.includes('配置')" to="/settings?section=ai">前往 AI 设置</RouterLink>
         </p>
 
-        <section class="written card">
+        <section ref="writtenSection" class="written card">
           <div class="section-head">
             <h3 class="section-title">整理后的日记</h3>
             <span v-if="data?.journal.generatedAt" class="ai-stamp"><Sparkles :size="11" />AI 已整理</span>
           </div>
-          <textarea v-if="editing" v-model="content" class="journal-editor" placeholder="把这一天整理成一篇日记……" />
+          <textarea v-if="editing" ref="journalEditor" v-model="content" class="journal-editor" placeholder="把这一天整理成一篇日记……" />
           <div v-else-if="content" class="journal-text">{{ content }}</div>
           <div v-else class="empty">这一天还没有整理后的日记。</div>
           <button v-if="editing" class="btn btn-primary save" :disabled="busy" @click="save">
@@ -197,7 +230,7 @@ onMounted(load)
           </button>
         </section>
 
-        <section class="section">
+        <section ref="sourceSection" class="section source-section">
           <div class="section-head">
             <h3 class="section-title">原始片段</h3>
             <span class="count">{{ data?.entries.length || 0 }} 条</span>
@@ -210,6 +243,36 @@ onMounted(load)
         </section>
       </main>
     </div>
+    <Teleport to="body">
+      <Transition name="organize-sheet">
+        <div v-if="organizeSheetOpen" class="organize-sheet-backdrop" @click.self="organizeSheetOpen = false">
+          <section class="organize-sheet" role="dialog" aria-modal="true" aria-labelledby="organize-sheet-title">
+            <span class="sheet-handle" aria-hidden="true" />
+            <header class="sheet-head">
+              <div><p>JOURNAL TOOLS</p><h2 id="organize-sheet-title">整理这一天</h2></div>
+              <button class="icon-btn" aria-label="关闭整理菜单" @click="organizeSheetOpen = false"><X :size="18" /></button>
+            </header>
+            <div class="sheet-actions">
+              <button class="sheet-action ai" :disabled="aiBusy || !data?.entries.length" @click="organizeWithAi">
+                <span class="sheet-action-icon"><LoaderCircle v-if="aiBusy" class="spin" :size="19"/><Sparkles v-else :size="19"/></span>
+                <span><strong>{{aiBusy?'正在整理…':(content?'AI 重新整理':'AI 一键整理')}}</strong><small>{{data?.entries.length?'根据当天的原始片段重新生成正文':'先添加一条原始记录'}}</small></span>
+                <ChevronRight :size="17" />
+              </button>
+              <button class="sheet-action" @click="startManualOrganize">
+                <span class="sheet-action-icon"><PenLine :size="19"/></span>
+                <span><strong>手动整理</strong><small>直接编辑整理后的日记正文</small></span>
+                <ChevronRight :size="17" />
+              </button>
+              <button class="sheet-action" @click="viewSourceEntries">
+                <span class="sheet-action-icon"><ListTree :size="19"/></span>
+                <span><strong>查看原始记录</strong><small>跳到这一天保留的全部片段</small></span>
+                <ChevronRight :size="17" />
+              </button>
+            </div>
+          </section>
+        </div>
+      </Transition>
+    </Teleport>
     <ConfirmDialog
       v-if="deleting"
       title="删除这条日记片段？"
@@ -222,5 +285,5 @@ onMounted(load)
 </template>
 
 <style scoped>
-.journal-page{max-width:1280px}.journal-layout{display:grid;grid-template-columns:310px minmax(0,1fr);gap:42px;align-items:start}.calendar{position:sticky;top:28px;padding:22px 18px 20px;overflow:hidden;background:var(--primary);color:var(--primary-foreground);border-color:color-mix(in oklch,var(--primary-foreground) 12%,transparent);box-shadow:0 24px 60px color-mix(in oklch,var(--primary) 22%,transparent)}.calendar::after{content:"";position:absolute;width:160px;height:160px;right:-82px;bottom:-92px;border:30px solid color-mix(in oklch,var(--primary-foreground) 8%,transparent);border-radius:50%;pointer-events:none}.calendar-head{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;font-size:11px}.calendar :deep(.icon-btn){color:var(--primary-foreground)}.calendar :deep(.icon-btn:hover){background:color-mix(in oklch,var(--primary-foreground) 12%,transparent);border-color:transparent}.week,.days{position:relative;z-index:1;display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.week{margin:20px 0 8px;color:color-mix(in oklch,var(--primary-foreground) 55%,transparent);font-size:8px;font-weight:900;text-align:center}.days button{aspect-ratio:1;border:0;background:transparent;color:inherit;border-radius:calc(var(--radius)*.45);font-size:10px;transition:.16s}.days button:hover{background:color-mix(in oklch,var(--primary-foreground) 12%,transparent)}.days button.today{box-shadow:inset 0 0 0 1px color-mix(in oklch,var(--primary-foreground) 50%,transparent)}.days button.active{background:var(--primary-foreground);color:var(--primary);box-shadow:0 8px 20px color-mix(in oklch,var(--foreground) 22%,transparent)}.journal-title{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin:0 0 20px}.journal-title h2{font:650 31px/1.2 var(--font-display);letter-spacing:-.045em;margin:8px 0 0}.journal-actions{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-end}.reader-entry{border:1px solid color-mix(in oklch,var(--foreground) 12%,var(--border));background:var(--foreground);color:var(--background);box-shadow:0 9px 24px color-mix(in oklch,var(--foreground) 13%,transparent)}.reader-entry:disabled{opacity:.38}.ai-organize{position:relative;overflow:hidden;border:1px solid color-mix(in oklch,var(--primary) 35%,var(--border));background:color-mix(in oklch,var(--primary) 9%,var(--card));color:var(--primary);box-shadow:0 9px 24px color-mix(in oklch,var(--primary) 10%,transparent)}.ai-organize::after{content:"";position:absolute;inset:0;transform:translateX(-120%);background:linear-gradient(100deg,transparent,color-mix(in oklch,var(--primary-foreground) 34%,transparent),transparent);transition:transform .55s}.ai-organize:hover::after{transform:translateX(120%)}.ai-organize:disabled::after{display:none}.ai-error{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:-8px 0 14px;padding:11px 14px;border:1px solid color-mix(in oklch,var(--destructive) 28%,var(--border));border-radius:calc(var(--radius)*.65);background:color-mix(in oklch,var(--destructive) 7%,var(--card));color:var(--destructive);font-size:11px}.ai-error a{color:inherit;font-weight:900;white-space:nowrap}.written{position:relative;min-height:330px;padding:30px 32px;overflow:hidden;background:repeating-linear-gradient(to bottom,color-mix(in oklch,var(--card) 94%,transparent) 0,color-mix(in oklch,var(--card) 94%,transparent) 35px,color-mix(in oklch,var(--border) 60%,transparent) 36px)}.written::before{content:"";position:absolute;left:18px;top:0;bottom:0;width:1px;background:color-mix(in oklch,var(--destructive) 18%,transparent)}.written .section-head{position:relative;z-index:1}.ai-stamp{display:inline-flex;align-items:center;gap:5px;color:var(--primary);font-size:9px;font-weight:900;letter-spacing:.08em}.journal-text{position:relative;z-index:1;font-family:var(--font-display);white-space:pre-wrap;line-height:2.4;font-size:15px}.journal-editor{position:relative;z-index:1;width:100%;min-height:270px;border:0;background:transparent;outline:0;resize:vertical;font-family:var(--font-display);font-size:15px;line-height:2.4}.written :deep(.empty){background:color-mix(in oklch,var(--card) 70%,transparent)}.save{position:relative;z-index:1;margin-top:17px}.fragment{display:flex;gap:10px;padding:10px 10px 10px 18px;margin-bottom:13px;border-color:color-mix(in oklch,var(--diary-foreground) 16%,var(--border))}.fragment textarea{flex:1;min-height:46px;padding:10px 0;border:0;background:transparent;resize:none;outline:0;font-family:var(--font-display);line-height:1.7}.fragment .btn{align-self:flex-end}.spin{animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:960px){.journal-layout{grid-template-columns:270px minmax(0,1fr);gap:25px}.journal-title{align-items:flex-start;flex-direction:column}.journal-actions{justify-content:flex-start}}@media(max-width:760px){.journal-layout{grid-template-columns:1fr}.calendar{position:static}.journal-page{max-width:720px}.written{padding:24px 22px}.journal-title h2{font-size:25px}}@media(max-width:480px){.journal-actions{width:100%}.journal-actions .btn{flex:1}.ai-error{align-items:flex-start;flex-direction:column}}
+.journal-page{max-width:1280px}.journal-layout{display:grid;grid-template-columns:310px minmax(0,1fr);gap:42px;align-items:start}.calendar{position:sticky;top:28px;padding:22px 18px 20px;overflow:hidden;background:var(--primary);color:var(--primary-foreground);border-color:color-mix(in oklch,var(--primary-foreground) 12%,transparent);box-shadow:0 24px 60px color-mix(in oklch,var(--primary) 22%,transparent)}.calendar::after{content:"";position:absolute;width:160px;height:160px;right:-82px;bottom:-92px;border:30px solid color-mix(in oklch,var(--primary-foreground) 8%,transparent);border-radius:50%;pointer-events:none}.calendar-head{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;font-size:11px}.calendar :deep(.icon-btn){color:var(--primary-foreground)}.calendar :deep(.icon-btn:hover){background:color-mix(in oklch,var(--primary-foreground) 12%,transparent);border-color:transparent}.week,.days{position:relative;z-index:1;display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.week{margin:20px 0 8px;color:color-mix(in oklch,var(--primary-foreground) 55%,transparent);font-size:8px;font-weight:900;text-align:center}.days button{aspect-ratio:1;border:0;background:transparent;color:inherit;border-radius:calc(var(--radius)*.45);font-size:10px;transition:.16s}.days button:hover{background:color-mix(in oklch,var(--primary-foreground) 12%,transparent)}.days button.today{box-shadow:inset 0 0 0 1px color-mix(in oklch,var(--primary-foreground) 50%,transparent)}.days button.active{background:var(--primary-foreground);color:var(--primary);box-shadow:0 8px 20px color-mix(in oklch,var(--foreground) 22%,transparent)}.journal-title{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin:0 0 20px}.journal-title h2{font:650 31px/1.2 var(--font-display);letter-spacing:-.045em;margin:8px 0 0}.journal-actions{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-end}.desktop-journal-actions{display:flex;gap:9px;flex-wrap:wrap;justify-content:flex-end}.mobile-journal-actions{display:none}.reader-entry{border:1px solid color-mix(in oklch,var(--foreground) 12%,var(--border));background:var(--foreground);color:var(--background);box-shadow:0 9px 24px color-mix(in oklch,var(--foreground) 13%,transparent)}.reader-entry:disabled{opacity:.38}.ai-organize{position:relative;overflow:hidden;border:1px solid color-mix(in oklch,var(--primary) 35%,var(--border));background:color-mix(in oklch,var(--primary) 9%,var(--card));color:var(--primary);box-shadow:0 9px 24px color-mix(in oklch,var(--primary) 10%,transparent)}.ai-organize::after{content:"";position:absolute;inset:0;transform:translateX(-120%);background:linear-gradient(100deg,transparent,color-mix(in oklch,var(--primary-foreground) 34%,transparent),transparent);transition:transform .55s}.ai-organize:hover::after{transform:translateX(120%)}.ai-organize:disabled::after{display:none}.ai-error{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:-8px 0 14px;padding:11px 14px;border:1px solid color-mix(in oklch,var(--destructive) 28%,var(--border));border-radius:calc(var(--radius)*.65);background:color-mix(in oklch,var(--destructive) 7%,var(--card));color:var(--destructive);font-size:11px}.ai-error a{color:inherit;font-weight:900;white-space:nowrap}.written{position:relative;min-height:330px;padding:30px 32px;overflow:hidden;background:repeating-linear-gradient(to bottom,color-mix(in oklch,var(--card) 94%,transparent) 0,color-mix(in oklch,var(--card) 94%,transparent) 35px,color-mix(in oklch,var(--border) 60%,transparent) 36px)}.written::before{content:"";position:absolute;left:18px;top:0;bottom:0;width:1px;background:color-mix(in oklch,var(--destructive) 18%,transparent)}.written .section-head{position:relative;z-index:1}.ai-stamp{display:inline-flex;align-items:center;gap:5px;color:var(--primary);font-size:9px;font-weight:900;letter-spacing:.08em}.journal-text{position:relative;z-index:1;font-family:var(--font-display);white-space:pre-wrap;line-height:2.4;font-size:15px}.journal-editor{position:relative;z-index:1;width:100%;min-height:270px;border:0;background:transparent;outline:0;resize:vertical;font-family:var(--font-display);font-size:15px;line-height:2.4}.written :deep(.empty){background:color-mix(in oklch,var(--card) 70%,transparent)}.save{position:relative;z-index:1;margin-top:17px}.fragment{display:flex;gap:10px;padding:10px 10px 10px 18px;margin-bottom:13px;border-color:color-mix(in oklch,var(--diary-foreground) 16%,var(--border))}.fragment textarea{flex:1;min-height:46px;padding:10px 0;border:0;background:transparent;resize:none;outline:0;font-family:var(--font-display);line-height:1.7}.fragment .btn{align-self:flex-end}.source-section{scroll-margin-top:18px}.organize-sheet-backdrop{position:fixed;inset:0;z-index:120;display:flex;align-items:flex-end;justify-content:center;padding:14px 12px calc(82px + env(safe-area-inset-bottom));background:color-mix(in oklch,var(--foreground) 30%,transparent);backdrop-filter:blur(8px)}.organize-sheet{width:min(560px,100%);padding:9px 16px 16px;border:1px solid color-mix(in oklch,var(--border) 84%,transparent);border-radius:26px 26px 18px 18px;background:var(--card);box-shadow:0 -24px 70px color-mix(in oklch,var(--foreground) 20%,transparent)}.sheet-handle{display:block;width:42px;height:4px;margin:0 auto 13px;border-radius:99px;background:color-mix(in oklch,var(--muted-foreground) 26%,transparent)}.sheet-head{display:flex;align-items:center;justify-content:space-between;padding:0 4px 14px}.sheet-head p{margin:0 0 4px;color:var(--primary);font-size:8px;font-weight:900;letter-spacing:.17em}.sheet-head h2{margin:0;font:650 21px/1.25 var(--font-display);letter-spacing:-.025em}.sheet-actions{display:grid;gap:8px}.sheet-action{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;min-height:67px;padding:9px 12px;border:1px solid var(--border);border-radius:calc(var(--radius)*.78);background:var(--background);color:var(--foreground);text-align:left}.sheet-action:hover{border-color:color-mix(in oklch,var(--primary) 30%,var(--border));background:color-mix(in oklch,var(--primary) 4%,var(--background))}.sheet-action:disabled{opacity:.45}.sheet-action.ai{border-color:color-mix(in oklch,var(--primary) 20%,var(--border));background:color-mix(in oklch,var(--primary) 7%,var(--background))}.sheet-action-icon{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:var(--muted);color:var(--muted-foreground)}.sheet-action.ai .sheet-action-icon{background:var(--primary);color:var(--primary-foreground);box-shadow:0 8px 20px color-mix(in oklch,var(--primary) 22%,transparent)}.sheet-action>span:nth-child(2){display:grid;gap:4px;min-width:0}.sheet-action strong{font-size:12px}.sheet-action small{overflow:hidden;color:var(--muted-foreground);font-size:9px;text-overflow:ellipsis;white-space:nowrap}.sheet-action>svg{color:var(--muted-foreground)}.organize-sheet-enter-active,.organize-sheet-leave-active{transition:opacity .2s}.organize-sheet-enter-active .organize-sheet,.organize-sheet-leave-active .organize-sheet{transition:transform .26s cubic-bezier(.2,.85,.2,1)}.organize-sheet-enter-from,.organize-sheet-leave-to{opacity:0}.organize-sheet-enter-from .organize-sheet,.organize-sheet-leave-to .organize-sheet{transform:translateY(110%)}.spin{animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:960px){.journal-layout{grid-template-columns:270px minmax(0,1fr);gap:25px}.journal-title{align-items:flex-start;flex-direction:column}.journal-actions{justify-content:flex-start}}@media(max-width:760px){.journal-layout{grid-template-columns:1fr}.calendar{position:static}.journal-page{max-width:720px}.written{padding:24px 22px}.journal-title h2{font-size:25px}}@media(max-width:680px){.journal-actions{width:100%}.desktop-journal-actions{display:none}.mobile-journal-actions{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(112px,.65fr);gap:10px;width:100%}.mobile-journal-actions .btn{min-height:52px}.organize-menu-trigger{border:1px solid color-mix(in oklch,var(--primary) 22%,var(--border));background:color-mix(in oklch,var(--primary) 7%,var(--card));color:var(--primary)}.ai-error{align-items:flex-start;flex-direction:column}}
 </style>
