@@ -34,11 +34,11 @@ public class SecurityConfig {
             .csrf(csrf -> csrf
                     .csrfTokenRepository(csrfRepository)
                     .csrfTokenRequestHandler(requestHandler)
-                    .ignoringRequestMatchers(this::isApiTokenRequest))
+                    .ignoringRequestMatchers(this::isApiTokenRequest, this::isPublicShareRequest))
             .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/", "/index.html", "/login", "/timeline", "/journal", "/search", "/settings",
-                            "/assets/**", "/favicon.svg",
-                            "/api/v1/auth/**", "/actuator/health").permitAll()
+                            "/s/**", "/assets/**", "/favicon.svg",
+                            "/api/v1/auth/**", "/api/v1/public/journal-shares/**", "/actuator/health").permitAll()
                     .anyRequest().authenticated())
             .exceptionHandling(ex -> ex
                     .authenticationEntryPoint((req, res, e) -> {
@@ -55,6 +55,10 @@ public class SecurityConfig {
     private boolean isApiTokenRequest(HttpServletRequest request) {
         String value = request.getHeader("Authorization");
         return value != null && value.startsWith("Bearer rh_");
+    }
+
+    private boolean isPublicShareRequest(HttpServletRequest request) {
+        return request.getRequestURI().startsWith(request.getContextPath() + "/api/v1/public/journal-shares/");
     }
 
     @Bean PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }

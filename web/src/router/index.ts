@@ -6,6 +6,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: () => import('@/pages/LoginPage.vue') },
+    { path: '/s/:token', name: 'journal-share', component: () => import('@/pages/PublicJournalSharePage.vue'), meta: { title: '一页日记', public: true } },
     { path: '/journal/:date/read', name: 'journal-reader', component: () => import('@/pages/ImmersiveJournalPage.vue'), meta: { title: '沉浸阅读' } },
     {
       path: '/', component: AppShell,
@@ -21,6 +22,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async to => {
+  if (to.meta.public) return
   const auth = useAuthStore()
   if (!auth.ready) { try { await auth.check() } catch { /* handled below */ } }
   if (to.path !== '/login' && !auth.authenticated) return '/login'
