@@ -6,6 +6,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: () => import('@/pages/LoginPage.vue') },
+    { path: '/journal/:date/read', name: 'journal-reader', component: () => import('@/pages/ImmersiveJournalPage.vue'), meta: { title: '沉浸阅读' } },
     {
       path: '/', component: AppShell,
       children: [
@@ -28,4 +29,3 @@ router.beforeEach(async to => {
 
 router.afterEach(to => { document.title = `${to.meta.title || 'RecallHub'} · RecallHub` })
 export default router
-
